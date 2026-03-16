@@ -299,7 +299,8 @@ cd apps/api && npx prisma migrate deploy
 Seed will create:
 
 - 3 default zones (Red/Green/Orange)
-- default admin user from `.env` (`DEFAULT_ADMIN_USERNAME`, `DEFAULT_ADMIN_PASSWORD`)
+- default admin user from `.env` (`DEFAULT_ADMIN_USERNAME`, `DEFAULT_ADMIN_EMAIL`)
+- secure random admin password if `DEFAULT_ADMIN_PASSWORD` is empty (printed once during seed)
 
 ## Run development servers
 

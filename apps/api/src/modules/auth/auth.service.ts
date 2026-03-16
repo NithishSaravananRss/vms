@@ -32,6 +32,21 @@ import {
 const AUDIT_LOGIN_FAILED = 'USER_LOGIN_FAILED';
 const AUDIT_LOGIN_SUCCESS = 'USER_LOGIN_SUCCESS';
 const AUDIT_SUPER_ADMIN_LOGIN = 'SUPER_ADMIN_LOGIN';
+const INSECURE_SECRET_VALUES = new Set([
+  'replace-me',
+  'replace_me',
+  'changeme',
+  'change-me',
+  'change_me',
+  'your-secret',
+  'your_secret',
+  'secret',
+  'default',
+  'test',
+  'example',
+  'replace_with_64_byte_hex_string_for_access_token',
+  'replace_with_different_64_byte_hex_string_for_refresh_token',
+]);
 
 @Injectable()
 export class AuthService {
@@ -695,12 +710,51 @@ export class AuthService {
     return createHash('sha256').update(token).digest('hex');
   }
 
+  private validateJwtSecret(
+    secretName: 'JWT_ACCESS_SECRET' | 'JWT_REFRESH_SECRET',
+    value: string,
+  ) {
+    const normalized = value.trim();
+    const isProduction = process.env.NODE_ENV === 'production';
+
+    if (!normalized) {
+      throw new InternalServerErrorException(`${secretName} is missing`);
+    }
+
+    if (isProduction && INSECURE_SECRET_VALUES.has(normalized.toLowerCase())) {
+      throw new InternalServerErrorException(
+        `${secretName} must be replaced with a strong secret`,
+      );
+    }
+
+    if (isProduction && normalized.length < 64) {
+      throw new InternalServerErrorException(
+        `${secretName} must be at least 64 characters in production`,
+      );
+    }
+
+    return normalized;
+  }
+
   private getAccessSecret() {
     const secret = this.configService.get<string>('JWT_ACCESS_SECRET');
     if (!secret) {
       throw new InternalServerErrorException('JWT_ACCESS_SECRET is missing');
     }
-    return secret;
+
+    const validated = this.validateJwtSecret('JWT_ACCESS_SECRET', secret);
+    const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET');
+    if (
+      process.env.NODE_ENV === 'production' &&
+      refreshSecret &&
+      validated === refreshSecret.trim()
+    ) {
+      throw new InternalServerErrorException(
+        'JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be different in production',
+      );
+    }
+
+    return validated;
   }
 
   private getRefreshSecret() {
@@ -708,7 +762,20 @@ export class AuthService {
     if (!secret) {
       throw new InternalServerErrorException('JWT_REFRESH_SECRET is missing');
     }
-    return secret;
+
+    const validated = this.validateJwtSecret('JWT_REFRESH_SECRET', secret);
+    const accessSecret = this.configService.get<string>('JWT_ACCESS_SECRET');
+    if (
+      process.env.NODE_ENV === 'production' &&
+      accessSecret &&
+      validated === accessSecret.trim()
+    ) {
+      throw new InternalServerErrorException(
+        'JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be different in production',
+      );
+    }
+
+    return validated;
   }
 
   private getAccessTtlMinutes() {

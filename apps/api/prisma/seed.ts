@@ -1,5 +1,6 @@
-import { PrismaClient, ElectionType } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
+import { randomBytes } from 'crypto';
 
 const prisma = new PrismaClient();
 
@@ -36,6 +37,10 @@ const LOCATION_DATA = [
     ],
   },
 ];
+
+function generateSecurePassword() {
+  return randomBytes(24).toString('base64url');
+}
 
 /**
  * Seed shared location data (global - no candidateId).
@@ -137,8 +142,11 @@ async function main() {
   console.log('');
 
   // Step 2: Create demo candidate and admin user
-  const defaultEmail = process.env.DEFAULT_ADMIN_EMAIL ?? 'admin@example.com';
-  const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD ?? 'ChangeMeNow123!';
+  const defaultEmail = process.env.DEFAULT_ADMIN_EMAIL?.trim() || 'admin@example.com';
+  const defaultUsername = process.env.DEFAULT_ADMIN_USERNAME?.trim() || 'admin';
+  const configuredPassword = process.env.DEFAULT_ADMIN_PASSWORD?.trim();
+  const generatedPassword = configuredPassword ? null : generateSecurePassword();
+  const adminPassword = configuredPassword ?? generatedPassword!;
 
   // Check if candidate already exists
   const existingCandidate = await prisma.candidate.findUnique({
@@ -151,11 +159,7 @@ async function main() {
     console.log('='.repeat(50));
     console.log('SEED COMPLETED');
     console.log('='.repeat(50));
-    console.log('');
-    console.log('Login credentials:');
-    console.log(`  Email:    ${defaultEmail}`);
-    console.log(`  Password: ${defaultPassword}`);
-    console.log('');
+    console.log('No new credentials were generated. Use existing account credentials.');
     return;
   }
 
@@ -177,10 +181,10 @@ async function main() {
   console.log(`Created candidate: ${candidate.fullName} (${candidate.id})`);
 
   // Create ADMIN user for this candidate
-  const passwordHash = await argon2.hash(defaultPassword);
+  const passwordHash = await argon2.hash(adminPassword);
   const adminUser = await prisma.user.create({
     data: {
-      username: 'admin',
+      username: defaultUsername,
       email: defaultEmail,
       passwordHash,
       role: 'ADMIN',
@@ -202,7 +206,12 @@ async function main() {
   console.log('');
   console.log('Login credentials:');
   console.log(`  Email:    ${defaultEmail}`);
-  console.log(`  Password: ${defaultPassword}`);
+  if (configuredPassword) {
+    console.log('  Password: [configured via DEFAULT_ADMIN_PASSWORD]');
+  } else if (generatedPassword) {
+    console.log(`  Password: ${generatedPassword}`);
+    console.log('  IMPORTANT: Store this password securely and rotate it after first login.');
+  }
   console.log('');
   console.log('NOTE: Location data (Taluk, Village, Ward) is SHARED globally.');
   console.log('      Zones are scoped to individual candidates.');
